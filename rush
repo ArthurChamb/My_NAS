@@ -1,0 +1,146 @@
+--INTRO--
+
+Mettre des bon hostnames - domain
+Créer VM + Paquets ->
+- Gateway -> Rien
+- DNS-DHCP -> bind9 isc-dhcp-server
+- Web-Wiki -> apache2 php5 mysql-server php5-mysql phpmyadmin
+MAJ
+
+--GATEWAY--
+
+-Server Side-
+ip link show -> Vérifier qu'il y a bien 2 cartes / optionel
+
+/etc/interfaces ->
+auto lo eth0 eth1
+iface lo inet loopback
+#eth0 -> LAN
+allow-hotplug eth0
+iface eth0 inet static
+	address 192.168.42.1
+	netmask 255.255.255.192
+	network 192.168.42.0
+	broadcast 192.168.42.63
+pre-up iptables-restore < /etc/firewall.sh
+#eth1 -> NAT
+allow-hotplug eth1
+iface eth1 inet dhcp
+
+/etc/init.d/networking restart -> Reload Network Configuration
+echo 1 > /proc/sys/net/ipv4/ip_forward
+nano /etc/sysctl.conf -> Décommentez IP Forwarding
+
+iptables -F
+iptables -F -t nat
+iptables -F -t mangle
+iptables -t nat -A POSTROUTING -o eth1 -j MASQUERADE
+iptables -L -v -> check
+iptables-save > /etc/firewall.sh
+iptables-restore < /etc/firewall.sh
+
+-client side-
+
+nano /etc/interfaces -> gateway 192.168.42.1 + adresse IP fixe
+reboot
+Si ca marche toujours pas -> ip route add default via 192.168.42.1
+
+--DNS-- http://mixeduperic.com/ubuntu/seven-easy-steps-to-setting-up-an-interal-dns-server-on-ubuntu.html
+
+COMMANDE MIRACLE SI PROBLEME -> named-checkconf (check si la conf a pas un problème de syntaxe)
+
+/etc/bind/named.conf.options -> 8.8.8.8/8.8.4.4 pour remplacer les forwarders
+
+/etc/bind/named.conf.local ->
+zone "rushlab.lan" {
+	type master;
+	file "/etc/bind/db.rushlab.lan";
+	};
+
+zone "42.168.192.in-addr.arpa" {
+	type master;
+	notify no;
+	file "/etc/bind/db.192";
+};
+
+cp /etc/bind/db.local /etc/bind/db.rushlab.lan
+/etc/bind/db.rushlab.lan ->
+@	IN	SOA	rush-dhcp-dns.rushlab.lan. rush.localhost. (
+			      2		; Serial
+			 604800		; Refresh
+			  86400		; Retry
+			2419200		; Expire
+			 604800 )	; Negative Cache TTL
+;
+@	IN	NS	rush-dhcp-dns.rushlab.lan.
+@	IN	A	127.0.0.1
+@	IN	AAAA	::1
+
+rush-gateway	IN	A	192.168.42.1
+rush-dhcp-dns	IN	A	192.168.42.2
+rush-web-wiki	IN	A	192.168.42.3
+
+wiki		IN	CNAME	rush-web-wiki.rushlab.lan.
+intra		IN	CNAME	rush-web-wiki.rushlab.lan.
+
+sudo cp /etc/bind/db.127 /etc/bind/db.192
+/etc/bind/db.192 -> 
+@	IN	SOA	rush-dhcp-dns.rushlab.lan. rush.localhost. (
+			      1		; Serial
+			 604800		; Refresh
+			  86400		; Retry
+			2419200		; Expire
+			 604800 )	; Negative Cache TTL
+;
+@	IN	NS	rush-dhcp-dns.rushlab.lan.
+1	IN	PTR	rush-gateway.rushlab.lan.
+2	IN	PTR	rush-dhcp-dns.rushlab.lan.
+3	IN	PTR	rush-web-wiki.rushlab.lan.
+
+/etc/resolv/conf ->
+nameserver 192.168.42.2
+domain rushlab.lan
+search rushlab.lan
+
+sudo /etc/init.d/bind9 restart
+nslookup 192.168.42.3 -> check
+ping wiki.rushlab.lan -> check
+
+--DHCP-- https://www.security-helpzone.com/2013/06/16/isc-dhcp-server-configurer-un-serveur-dhcp/
+
+/etc/dhcp/dhcpd.conf ->
+ddns-update-style none;
+option domain-name "rushlab.lan";
+option domain-name-servers 192.168.42.2;
+default-lease-time 86400;
+max-lease-time 604800;
+authoritative;
+log-facility local7;
+subnet 192.168.42.0 netmask 255.255.255.192 {
+ 	range 192.168.42.4 192.168.42.60;
+ 	option routers 192.168.42.1;
+	option subnet-mask 255.255.255.192;
+	option broadcast-address 192.168.42.192;
+}
+
+/etc/default/isc-dhcp-server -> Set Interface to eth0
+
+test -> dhclient eth0
+
+--WEB--
+
+DNS -> /etc/resolv.conf
+useradd -m alex
+passwd alex
+SUDO -> alex/lab
+USERDIR -> http://www.techytalk.info/enable-userdir-apache-module-ubuntu-debian-based-linux-distributions/
+a2ensite <- For the virtual hosts
+
+--WIKI--
+deb http://ftp.debian.org/debian jessie-backports main
+apt-get -t jessie-backports install "package"
+<VirtualHost *:80>
+ DocumentRoot /var/www/html/mediawiki
+ Servername wiki.rushlab.lan
+</VirtualHost>
+scp Downloads/file lab@192.168.42.3:/home/lab

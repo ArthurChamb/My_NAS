@@ -1,2 +1,7 @@
 # My_NAS
-My_NAS was an epitech project where the goal was to setup a network LAB in a limited amount of time
+
+### /!\ STUDENTS - USE AT YOUR OWN RISK /!\
+
+My_NAS was a simple epitech project where the goal was to setup a network LAB in a limited amount of time
+
+This was done during a Rush
